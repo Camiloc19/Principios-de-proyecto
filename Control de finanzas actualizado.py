@@ -30,7 +30,7 @@ conn.commit()
 # =========================
 # FUNCIONES
 # =========================
-
+#comentario
 def calcular_balance():
     cursor.execute("""
     SELECT 
