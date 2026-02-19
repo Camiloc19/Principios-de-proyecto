@@ -135,7 +135,7 @@ btn_ingreso = ctk.CTkButton(
     botones_frame,
     text="Ingreso",
     fg_color="#16a34a",
-    hover_color="#15803d",
+    hover_color="#13cc57",
     command=lambda: registrar("Ingreso")
 )
 btn_ingreso.pack(side="left", padx=10)
@@ -143,8 +143,8 @@ btn_ingreso.pack(side="left", padx=10)
 btn_gasto = ctk.CTkButton(
     botones_frame,
     text="Gasto",
-    fg_color="#dc2626",
-    hover_color="#b91c1c",
+    fg_color="#17e0e0", #cambio de color 
+    hover_color="#1dee0a",#cambio de color
     command=lambda: registrar("Gasto")
 )
 btn_gasto.pack(side="left", padx=10)
