@@ -1,163 +1,47 @@
 import customtkinter as ctk
-from tkinter import ttk
+import tkinter as tk
+from tkinter import ttk, messagebox
 import sqlite3
-from datetime import datetime
-from tkinter import messagebox
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-
-# =========================
-# CONFIGURACIÓN VISUAL
-# =========================
+import os
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-# =========================
-# BASE DE DATOS
-# =========================
-
+# ================== BASE DE DATOS ==================
 conn = sqlite3.connect("finanzas.db")
 cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS usuarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario TEXT UNIQUE,
+    contraseña TEXT
+)
+""")
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS movimientos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tipo TEXT,
-    monto REAL,
-    fecha TEXT
+    descripcion TEXT,
+    monto REAL
 )
 """)
+
 conn.commit()
 
-# =========================
-# FUNCIONES SISTEMA
-# =========================
-
-def calcular_balance():
-    cursor.execute("""
-    SELECT 
-        SUM(CASE WHEN tipo='Ingreso' THEN monto ELSE 0 END),
-        SUM(CASE WHEN tipo='Gasto' THEN monto ELSE 0 END)
-    FROM movimientos
-    """)
-    ingresos, gastos = cursor.fetchone()
-    ingresos = ingresos or 0
-    gastos = gastos or 0
-    return ingresos - gastos
-
-
-def registrar(tipo):
-    try:
-        monto = float(entry_monto.get())
-        if monto <= 0:
-            return
-    except:
-        return
-
-    if tipo == "Gasto" and monto > calcular_balance():
-        messagebox.showwarning("Fondos insuficientes", "No tienes suficiente dinero.")
-        return
-
-    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    cursor.execute(
-        "INSERT INTO movimientos (tipo, monto, fecha) VALUES (?, ?, ?)",
-        (tipo, monto, fecha)
-    )
-    conn.commit()
-
-    entry_monto.delete(0, "end")
-    actualizar_tabla()
-    actualizar_balance()
-
-
-def actualizar_tabla():
-    for fila in tree.get_children():
-        tree.delete(fila)
-
-    cursor.execute("SELECT * FROM movimientos ORDER BY id DESC")
-
-    for row in cursor.fetchall():
-        tree.insert("", "end", values=row)
-
-
-def actualizar_balance():
-    balance = calcular_balance()
-    label_balance.configure(text=f"${balance:,.2f}")
-
-# =========================
-# GENERAR FACTURA PDF
-# =========================
-
-def generar_factura():
-    seleccionados = tree.selection()
-
-    if not seleccionados:
-        messagebox.showwarning("Aviso", "Selecciona uno o más movimientos.")
-        return
-
-    datos_factura = []
-    total = 0
-
-    for item in seleccionados:
-        valores = tree.item(item)["values"]
-        id_mov, tipo, monto, fecha = valores
-        total += float(monto)
-
-        datos_factura.append([
-            id_mov,
-            tipo,
-            fecha,
-            f"${float(monto):,.2f}"
-        ])
-
-    nombre_archivo = f"Factura_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    doc = SimpleDocTemplate(nombre_archivo)
-    elementos = []
-    estilos = getSampleStyleSheet()
-
-    elementos.append(Paragraph("<b>FINANZAS PRO</b>", estilos["Title"]))
-    elementos.append(Spacer(1, 0.3 * inch))
-
-    encabezado = [["ID", "Tipo", "Fecha", "Monto"]]
-    tabla_data = encabezado + datos_factura
-
-    tabla = Table(tabla_data, colWidths=[50, 100, 120, 100])
-    tabla.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-        ('ALIGN', (3, 1), (3, -1), 'RIGHT')
-    ]))
-
-    elementos.append(tabla)
-    elementos.append(Spacer(1, 0.3 * inch))
-
-    elementos.append(Paragraph(
-        f"<b>Total: ${total:,.2f}</b>",
-        estilos["Heading2"]
-    ))
-
-    doc.build(elementos)
-
-    messagebox.showinfo("Factura generada",
-                        f"Factura creada:\n{nombre_archivo}")
-    
-# =========================
-# LOGIN
-# =========================
+# ================== FUNCIONES ==================
 
 def verificar_login():
     usuario = entry_usuario.get()
     contraseña = entry_contraseña.get()
 
-    if usuario == "camilo" and contraseña == "1234":
-        for widget in app.winfo_children():
-            widget.destroy()
-        mostrar_sistema()
-    elif usuario == "mariana" and contraseña == "420":
+    cursor.execute(
+        "SELECT * FROM usuarios WHERE usuario = ? AND contraseña = ?",
+        (usuario, contraseña)
+    )
+
+    if cursor.fetchone():
         for widget in app.winfo_children():
             widget.destroy()
         mostrar_sistema()
@@ -165,135 +49,190 @@ def verificar_login():
         messagebox.showerror("Error", "Usuario o contraseña incorrectos")
 
 
+def registrar_usuario():
+    nuevo_usuario = entry_nuevo_usuario.get()
+    nueva_contraseña = entry_nueva_contraseña.get()
+
+    if not nuevo_usuario or not nueva_contraseña:
+        messagebox.showwarning("Aviso", "Completa todos los campos.")
+        return
+
+    try:
+        cursor.execute(
+            "INSERT INTO usuarios (usuario, contraseña) VALUES (?, ?)",
+            (nuevo_usuario, nueva_contraseña)
+        )
+        conn.commit()
+        messagebox.showinfo("Éxito", "Usuario registrado correctamente.")
+        ventana_registro.destroy()
+    except:
+        messagebox.showerror("Error", "El usuario ya existe.")
+
+
+def abrir_registro():
+    global entry_nuevo_usuario, entry_nueva_contraseña, ventana_registro
+
+    ventana_registro = ctk.CTkToplevel(app)
+    ventana_registro.geometry("300x250")
+    ventana_registro.title("Registrar Usuario")
+
+    ctk.CTkLabel(ventana_registro, text="Nuevo Usuario").pack(pady=10)
+
+    entry_nuevo_usuario = ctk.CTkEntry(ventana_registro, placeholder_text="Usuario")
+    entry_nuevo_usuario.pack(pady=5)
+
+    entry_nueva_contraseña = ctk.CTkEntry(
+        ventana_registro,
+        placeholder_text="Contraseña",
+        show="*"
+    )
+    entry_nueva_contraseña.pack(pady=5)
+
+    ctk.CTkButton(
+        ventana_registro,
+        text="Registrar",
+        command=registrar_usuario
+    ).pack(pady=15)
+
+
+def agregar_movimiento():
+    tipo = combo_tipo.get()
+    descripcion = entry_descripcion.get()
+    monto = entry_monto.get()
+
+    if not descripcion or not monto:
+        messagebox.showwarning("Aviso", "Completa todos los campos.")
+        return
+
+    cursor.execute(
+        "INSERT INTO movimientos (tipo, descripcion, monto) VALUES (?, ?, ?)",
+        (tipo, descripcion, float(monto))
+    )
+
+    conn.commit()
+    actualizar_tabla()
+    actualizar_balance()
+
+    entry_descripcion.delete(0, "end")
+    entry_monto.delete(0, "end")
+
+
+def actualizar_tabla():
+    for row in tree.get_children():
+        tree.delete(row)
+
+    cursor.execute("SELECT * FROM movimientos")
+    for row in cursor.fetchall():
+        tree.insert("", "end", values=row)
+
+
+def actualizar_balance():
+    cursor.execute("SELECT SUM(monto) FROM movimientos WHERE tipo='Ingreso'")
+    ingresos = cursor.fetchone()[0] or 0
+
+    cursor.execute("SELECT SUM(monto) FROM movimientos WHERE tipo='Gasto'")
+    gastos = cursor.fetchone()[0] or 0
+
+    balance = ingresos - gastos
+    label_balance.configure(text=f"Balance: ${balance:,.2f}")
+
+
+def eliminar_registro():
+    seleccionados = tree.selection()
+
+    if not seleccionados:
+        messagebox.showwarning("Aviso", "Selecciona un registro.")
+        return
+
+    for item in seleccionados:
+        valores = tree.item(item)["values"]
+        id_mov = valores[0]
+        cursor.execute("DELETE FROM movimientos WHERE id = ?", (id_mov,))
+
+    conn.commit()
+    actualizar_tabla()
+    actualizar_balance()
+
+
+# ================== INTERFAZ ==================
+
 def mostrar_login():
     global entry_usuario, entry_contraseña
 
     login_frame = ctk.CTkFrame(app)
     login_frame.pack(expand=True)
 
-    ctk.CTkLabel(
-        login_frame,
-        text="Iniciar Sesión",
-        font=ctk.CTkFont(size=22, weight="bold")
-    ).pack(pady=20)
+    ctk.CTkLabel(login_frame, text="INICIAR SESIÓN", font=("Arial", 22)).pack(pady=20)
 
     entry_usuario = ctk.CTkEntry(login_frame, placeholder_text="Usuario")
     entry_usuario.pack(pady=10)
 
-    entry_contraseña = ctk.CTkEntry(
-        login_frame,
-        placeholder_text="Contraseña",
-        show="*"
-    )
+    entry_contraseña = ctk.CTkEntry(login_frame, placeholder_text="Contraseña", show="*")
     entry_contraseña.pack(pady=10)
 
+    ctk.CTkButton(login_frame, text="Ingresar", command=verificar_login).pack(pady=10)
+
     ctk.CTkButton(
         login_frame,
-        text="Ingresar",
-        command=verificar_login
-    ).pack(pady=20)
+        text="Registrar Nuevo Usuario",
+        fg_color="#2563eb",
+        command=abrir_registro
+    ).pack(pady=5)
 
-
-def cerrar_sesion():
-    for widget in app.winfo_children():
-        widget.destroy()
-    mostrar_login()
-
-# =========================
-# SISTEMA PRINCIPAL
-# =========================
 
 def mostrar_sistema():
-    global entry_monto, label_balance, tree
-
-    sidebar = ctk.CTkFrame(app, width=200, corner_radius=0)
-    sidebar.pack(side="left", fill="y")
-
-    ctk.CTkLabel(
-        sidebar,
-        text="💳 FARCTURA",
-        font=ctk.CTkFont(size=18, weight="bold")
-    ).pack(pady=30)
-
-    ctk.CTkButton(
-        sidebar,
-        text="Cerrar Sesión",
-        fg_color="#b91c1c",
-        hover_color="#ef4444",
-        command=cerrar_sesion
-    ).pack(pady=10)
+    global tree, entry_descripcion, entry_monto, combo_tipo, label_balance
 
     main_frame = ctk.CTkFrame(app)
     main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-    ctk.CTkLabel(
-        main_frame,
-        text="Balance Actual",
-        font=ctk.CTkFont(size=20)
-    ).pack()
+    ctk.CTkLabel(main_frame, text="Sistema de Finanzas", font=("Arial", 22)).pack(pady=10)
 
-    label_balance = ctk.CTkLabel(
+    combo_tipo = ctk.CTkComboBox(main_frame, values=["Ingreso", "Gasto"])
+    combo_tipo.pack(pady=5)
+    combo_tipo.set("Ingreso")
+
+    entry_descripcion = ctk.CTkEntry(main_frame, placeholder_text="Descripción")
+    entry_descripcion.pack(pady=5)
+
+    entry_monto = ctk.CTkEntry(main_frame, placeholder_text="Monto")
+    entry_monto.pack(pady=5)
+
+    ctk.CTkButton(main_frame, text="Agregar Movimiento", command=agregar_movimiento).pack(pady=5)
+
+    tree = ttk.Treeview(main_frame, columns=("ID", "Tipo", "Descripción", "Monto"), show="headings")
+    tree.heading("ID", text="ID")
+    tree.heading("Tipo", text="Tipo")
+    tree.heading("Descripción", text="Descripción")
+    tree.heading("Monto", text="Monto")
+
+    tree.pack(pady=10, fill="both", expand=True)
+
+    ctk.CTkButton(
         main_frame,
-        text="$0.00",
-        font=ctk.CTkFont(size=32, weight="bold")
-    )
+        text="Eliminar Registro",
+        fg_color="#dc2626",
+        command=eliminar_registro
+    ).pack(pady=5)
+
+    label_balance = ctk.CTkLabel(main_frame, text="Balance: $0.00", font=("Arial", 18))
     label_balance.pack(pady=10)
-
-    entry_monto = ctk.CTkEntry(
-        main_frame,
-        placeholder_text="Ingrese monto"
-    )
-    entry_monto.pack(pady=10)
-
-    botones_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-    botones_frame.pack(pady=10)
-
-    ctk.CTkButton(
-        botones_frame,
-        text="Ingreso",
-        fg_color="#16a34a",
-        command=lambda: registrar("Ingreso")
-    ).pack(side="left", padx=10)
-
-    ctk.CTkButton(
-        botones_frame,
-        text="Gasto",
-        fg_color="#f71d00",
-        command=lambda: registrar("Gasto")
-    ).pack(side="left", padx=10)
-
-    ctk.CTkButton(
-        main_frame,
-        text="Generar Factura PDF",
-        fg_color="#2563eb",
-        command=generar_factura
-    ).pack(pady=10)
-
-    tree = ttk.Treeview(main_frame,
-                    columns=("ID", "Tipo", "Monto", "Fecha"),
-                    show="headings",
-                    selectmode="extended")
-    
-    for col in ("ID", "Tipo", "Monto", "Fecha"):
-        tree.heading(col, text=col)
-        tree.column(col, anchor="center")
-
-    tree.pack(fill="both", expand=True, pady=20)
 
     actualizar_tabla()
     actualizar_balance()
 
-# =========================
-# VENTANA PRINCIPAL
-# =========================
+
+# ================== APP ==================
 
 app = ctk.CTk()
-app.geometry("1000x600")
-app.title("BOST YOUR LIFE")
+app.geometry("900x600")
+app.title("BOOST YOUR LIFE")
 
-app.iconbitmap("ficticio.ico")
+# Si tienes icono.png en la misma carpeta:
+if os.path.exists("ficticio.png"):
+    icono = tk.PhotoImage(file="icono.png")
+    app.iconphoto(True, icono)
 
 mostrar_login()
-
 
 app.mainloop()
